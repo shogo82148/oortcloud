@@ -8,18 +8,16 @@ import (
 )
 
 type HTTPNotifier struct {
-	conn      Connector
-	URLs      []string
-	BodyType  string
-	NumWorker int
+	URLs     []string
+	BodyType string
 
-	mu       sync.Mutex
+	conMap   ConnectionMap
+	mu       sync.RWMutex
 	urlIndex int
 }
 
-func NewHTTPNotifier(conn Connector, urls []string) *HTTPNotifier {
+func NewHTTPNotifier(urls []string) *HTTPNotifier {
 	return &HTTPNotifier{
-		conn:     conn,
 		URLs:     urls,
 		BodyType: "application/octet-stream",
 	}
@@ -32,39 +30,22 @@ func (n *HTTPNotifier) Handle(w http.ResponseWriter, req *http.Request) {
 	}
 	if req.Method != "POST" {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
 	}
 
-	buf := &bytes.Buffer{}
-	io.Copy(buf, req.Body)
-	err := n.conn.Send(Event{
-		ConnectionId: id,
-		Type:         Send,
-		Data:         buf.Bytes(),
-	})
-
-	if err == ConnectionIdNotFound {
+	con, ok := n.conMap.Get(id)
+	if !ok {
 		http.NotFound(w, req)
 		return
 	}
-	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-	}
-
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
-}
-
-func (n *HTTPNotifier) HandleBroadcast(w http.ResponseWriter, req *http.Request) {
-	if req.Method != "POST" {
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+	if con == nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
 	}
 
 	buf := &bytes.Buffer{}
 	io.Copy(buf, req.Body)
-	err := n.conn.Broadcast(Event{
-		Type: Send,
-		Data: buf.Bytes(),
-	})
+	err := con.Send(buf.Bytes())
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
@@ -73,39 +54,37 @@ func (n *HTTPNotifier) HandleBroadcast(w http.ResponseWriter, req *http.Request)
 	w.WriteHeader(http.StatusOK)
 }
 
-func (n *HTTPNotifier) Run() {
-	numWorker := n.NumWorker
-	if numWorker < 1 {
-		numWorker = 1
-	}
-	for i := 0; i < numWorker; i++ {
-		go n.run()
-	}
+func (n *HTTPNotifier) Connect(con Connection, data []byte) (string, error) {
+	id := n.conMap.New(con)
+	err := n.send(id, Connect, data)
+	return id, err
 }
 
-func (n *HTTPNotifier) run() {
-	events := n.conn.Events()
-	for {
-		func() {
-			e := <-events
-			req, err := http.NewRequest("POST", n.getURL(), bytes.NewBuffer(e.Data))
-			if err != nil {
-				return
-			}
-			if e.Type == Connect {
-				req.Header.Set("content-type", "text/plain")
-			} else {
-				req.Header.Set("content-type", n.BodyType)
-			}
-			req.Header.Set("x-oortcloud-connection-id", e.ConnectionId)
-			req.Header.Set("x-oortcloud-event", e.Type.String())
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				return
-			}
-			defer resp.Body.Close()
-		}()
+func (n *HTTPNotifier) Disconnect(id string) error {
+	n.conMap.Delete(id)
+	return n.send(id, Disconnect, nil)
+}
+
+func (n *HTTPNotifier) Notify(id string, data []byte) error {
+	return n.send(id, Receive, data)
+}
+
+func (n *HTTPNotifier) send(id string, eventType EventType, data []byte) error {
+	req, err := http.NewRequest("POST", n.getURL(), bytes.NewBuffer(data))
+	if err != nil {
+		return err
 	}
+
+	req.Header.Set("content-type", n.BodyType)
+	req.Header.Set("x-oortcloud-connection-id", id)
+	req.Header.Set("x-oortcloud-event", eventType.String())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return err
 }
 
 func (n *HTTPNotifier) getURL() string {

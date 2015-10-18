@@ -19,10 +19,14 @@ type Event struct {
 	Data         []byte
 }
 
-type Connector interface {
-	Events() chan Event
-	Send(e Event) error
-	Broadcast(e Event) error
+type Connection interface {
+	Send(data []byte) error
+}
+
+type Notifier interface {
+	Notify(id string, data []byte) error
+	Connect(con Connection, data []byte) (string, error)
+	Disconnect(id string) error
 }
 
 func (t EventType) String() string {
