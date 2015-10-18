@@ -1,2 +1,2 @@
 # oortcloud
-simple web-socket/sever-sent-event to http proxy
+simple web-socket/sever-sent-event to http translater
