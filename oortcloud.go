@@ -1,6 +1,9 @@
 package oortcloud
 
-import "errors"
+import (
+	"errors"
+	"net/http"
+)
 
 type EventType int
 
@@ -25,7 +28,7 @@ type Connection interface {
 
 type Notifier interface {
 	Notify(id string, data []byte) error
-	Connect(con Connection, data []byte) (string, error)
+	Connect(con Connection, request *http.Request) (string, *http.Response, error)
 	Disconnect(id string) error
 }
 
