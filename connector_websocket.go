@@ -2,6 +2,7 @@ package oortcloud
 
 import (
 	"errors"
+	"io"
 	"net/http"
 
 	"golang.org/x/net/websocket"
@@ -49,13 +50,27 @@ func NewWebSocketConnector(notifier Notifier, binary bool) *WebSocketConnector {
 // Handle implements the http.Handler interface
 func (c *WebSocketConnector) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	id, resp, err := c.notifier.Connect(nil, req)
-	if err != nil {
+	if err != nil || resp == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if resp != nil {
+	if resp.StatusCode != http.StatusOK {
+		// copy header
+		for _, h := range hopHeaders {
+			resp.Header.Del(h)
+		}
+		for k, vv := range resp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
 		resp.Body.Close()
+		return
 	}
+	resp.Body.Close()
 	defer c.notifier.Disconnect(id)
 
 	conn := &WebSocketConnection{

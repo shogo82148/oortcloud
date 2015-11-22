@@ -1,7 +1,9 @@
 package oortcloud
 
 import (
+	"bytes"
 	"errors"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,7 +21,16 @@ func TestWebSocketConnector(t *testing.T) {
 	notifier := &FuncNotifier{
 		ConnectFunc: func(con Connection, request *http.Request) (string, *http.Response, error) {
 			calledConnect <- struct{}{}
-			return connectionId, nil, nil
+			return connectionId, &http.Response{
+				Status:        "200 OK",
+				StatusCode:    http.StatusOK,
+				Proto:         "http/1.0",
+				ProtoMajor:    1,
+				ProtoMinor:    0,
+				Header:        http.Header(map[string][]string{}),
+				Body:          ioutil.NopCloser(bytes.NewBuffer([]byte{})),
+				ContentLength: 0,
+			}, nil
 		},
 		DisconnectFunc: func(id string) error {
 			if id != connectionId {
@@ -80,7 +91,53 @@ func TestWebSocketConnector_ConnectionError(t *testing.T) {
 
 	// test connect
 	resp, _ := http.Get(ts.URL)
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("want %d, got %v", http.StatusInternalServerError, resp.StatusCode)
+	}
+}
+
+func TestWebSocketConnector_ConnectionForbidden(t *testing.T) {
+	// prepare the test server
+	notifier := &FuncNotifier{
+		ConnectFunc: func(con Connection, request *http.Request) (string, *http.Response, error) {
+			return "dummy-id", &http.Response{
+				Status:     "403 Forbidden",
+				StatusCode: http.StatusForbidden,
+				Proto:      "http/1.0",
+				ProtoMajor: 1,
+				ProtoMinor: 0,
+				Header: http.Header(map[string][]string{
+					"X-Oortcloud-Test-Header": {"oortcloud"},
+					"Proxy-Authorization":     {"This Header will be ignored"},
+				}),
+				Body:          ioutil.NopCloser(bytes.NewBuffer([]byte("forbidden"))),
+				ContentLength: 0,
+			}, nil
+		},
+	}
+	connector := NewWebSocketConnector(notifier, true)
+	ts := httptest.NewServer(connector)
+	defer ts.Close()
+
+	// test connect
+	resp, _ := http.Get(ts.URL)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("want %d, got %v", http.StatusForbidden, resp.StatusCode)
+	}
+	if resp.Header.Get("X-Oortcloud-Test-Header") != "oortcloud" {
+		t.Errorf("want %s, got %s", "oortcloud", resp.Header.Get("X-Oortcloud-Test-Header"))
+	}
+	if resp.Header.Get("Proxy-Authorization") != "" {
+		t.Errorf("want \"\", got %s", resp.Header.Get("Proxy-Authorization"))
+	}
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if string(data) != "forbidden" {
+		t.Errorf("want forbidden, got %s", string(data))
 	}
 }
