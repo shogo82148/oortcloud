@@ -3,13 +3,16 @@ package oortcloud
 import (
 	"bytes"
 	"io"
+	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 type HTTPNotifier struct {
 	URLs     []string
 	BodyType string
+	Client   *http.Client
 
 	conMap   *ConnectionMap
 	mu       sync.RWMutex
@@ -20,11 +23,21 @@ func NewHTTPNotifier(urls []string) *HTTPNotifier {
 	return &HTTPNotifier{
 		URLs:     urls,
 		BodyType: "application/octet-stream",
-		conMap:   NewConnectionMap(),
+		Client: &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				Dial: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).Dial,
+				TLSHandshakeTimeout: 10 * time.Second,
+			},
+		},
+		conMap: NewConnectionMap(),
 	}
 }
 
-func (n *HTTPNotifier) Handle(w http.ResponseWriter, req *http.Request) {
+func (n *HTTPNotifier) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	id := req.URL.Path
 	if len(id) >= 1 && id[0] == '/' {
 		id = id[1:len(id)]
@@ -57,8 +70,30 @@ func (n *HTTPNotifier) Handle(w http.ResponseWriter, req *http.Request) {
 
 func (n *HTTPNotifier) Connect(con Connection, request *http.Request) (string, *http.Response, error) {
 	id := n.conMap.New(con)
-	err := n.send(id, Connect, []byte{})
-	return id, nil, err
+	req, err := http.NewRequest("POST", n.getURL(), nil)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// copy header
+	if request != nil {
+		for _, h := range hopHeaders {
+			request.Header.Del(h)
+		}
+		for k, vv := range request.Header {
+			for _, v := range vv {
+				req.Header.Add(k, v)
+			}
+		}
+	}
+
+	// set X-Oortclound headers
+	req.Header.Set("Content-Type", n.BodyType)
+	req.Header.Set("X-Oortcloud-Connection-Id", id)
+	req.Header.Set("x-Oortcloud-Event", Connect.String())
+
+	resp, err := n.Client.Do(req)
+	return id, resp, err
 }
 
 func (n *HTTPNotifier) Disconnect(id string) error {
@@ -76,10 +111,10 @@ func (n *HTTPNotifier) send(id string, eventType EventType, data []byte) error {
 		return err
 	}
 
-	req.Header.Set("content-type", n.BodyType)
-	req.Header.Set("x-oortcloud-connection-id", id)
-	req.Header.Set("x-oortcloud-event", eventType.String())
-	resp, err := http.DefaultClient.Do(req)
+	req.Header.Set("Content-Type", n.BodyType)
+	req.Header.Set("X-Oortcloud-Connection-Id", id)
+	req.Header.Set("X-Oortcloud-Event", eventType.String())
+	resp, err := n.Client.Do(req)
 	if err != nil {
 		return err
 	}
