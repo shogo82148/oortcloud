@@ -55,7 +55,7 @@ func TestHTTPNotifier(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 	w := httptest.NewRecorder()
-	notifier.Handle(w, req)
+	notifier.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("want %d, got %d", http.StatusOK, w.Code)
 	}

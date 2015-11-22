@@ -37,7 +37,7 @@ func NewHTTPNotifier(urls []string) *HTTPNotifier {
 	}
 }
 
-func (n *HTTPNotifier) Handle(w http.ResponseWriter, req *http.Request) {
+func (n *HTTPNotifier) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	id := req.URL.Path
 	if len(id) >= 1 && id[0] == '/' {
 		id = id[1:len(id)]
