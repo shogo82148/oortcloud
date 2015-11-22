@@ -3,13 +3,16 @@ package oortcloud
 import (
 	"bytes"
 	"io"
+	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 type HTTPNotifier struct {
 	URLs     []string
 	BodyType string
+	Client   *http.Client
 
 	conMap   *ConnectionMap
 	mu       sync.RWMutex
@@ -20,7 +23,17 @@ func NewHTTPNotifier(urls []string) *HTTPNotifier {
 	return &HTTPNotifier{
 		URLs:     urls,
 		BodyType: "application/octet-stream",
-		conMap:   NewConnectionMap(),
+		Client: &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				Dial: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).Dial,
+				TLSHandshakeTimeout: 10 * time.Second,
+			},
+		},
+		conMap: NewConnectionMap(),
 	}
 }
 
@@ -79,7 +92,7 @@ func (n *HTTPNotifier) send(id string, eventType EventType, data []byte) error {
 	req.Header.Set("content-type", n.BodyType)
 	req.Header.Set("x-oortcloud-connection-id", id)
 	req.Header.Set("x-oortcloud-event", eventType.String())
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := n.Client.Do(req)
 	if err != nil {
 		return err
 	}
