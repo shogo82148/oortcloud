@@ -1,14 +1,23 @@
 package oortcloud
 
 import (
+	"fmt"
+	"math/rand"
 	"sync"
-
-	"github.com/Songmu/strrand"
+	"time"
 )
 
 type ConnectionMap struct {
+	rand   *rand.Rand
 	conMap map[string]Connection
 	mu     sync.RWMutex
+}
+
+func NewConnectionMap() *ConnectionMap {
+	return &ConnectionMap{
+		rand:   rand.New(rand.NewSource(time.Now().UnixNano())),
+		conMap: map[string]Connection{},
+	}
 }
 
 func (c *ConnectionMap) New(con Connection) string {
@@ -16,14 +25,11 @@ func (c *ConnectionMap) New(con Connection) string {
 	defer c.mu.Unlock()
 
 	if c.conMap == nil {
-		c.conMap = map[string]Connection{}
+		panic("cannot create id")
 	}
 
 	for i := 0; i < 1000; i++ {
-		id, err := strrand.RandomString("[0-9A-F]{32}")
-		if err != nil {
-			panic(err)
-		}
+		id := fmt.Sprintf("%08X%08X%08X%08X", c.rand.Uint32(), c.rand.Uint32(), c.rand.Uint32(), c.rand.Uint32())
 		if _, ok := c.conMap[id]; !ok {
 			c.conMap[id] = con
 			return id

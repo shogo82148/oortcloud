@@ -11,7 +11,7 @@ type HTTPNotifier struct {
 	URLs     []string
 	BodyType string
 
-	conMap   ConnectionMap
+	conMap   *ConnectionMap
 	mu       sync.RWMutex
 	urlIndex int
 }
@@ -20,6 +20,7 @@ func NewHTTPNotifier(urls []string) *HTTPNotifier {
 	return &HTTPNotifier{
 		URLs:     urls,
 		BodyType: "application/octet-stream",
+		conMap:   NewConnectionMap(),
 	}
 }
 
