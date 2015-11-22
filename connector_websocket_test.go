@@ -16,11 +16,12 @@ import (
 func TestWebSocketConnector(t *testing.T) {
 	// prepare the test server
 	const connectionId = "test-websocket-connection-id"
-	calledConnect := make(chan struct{}, 1)
+	calledConnect := make(chan Connection, 1)
 	calledDisconnect := make(chan struct{}, 1)
+	calledNotify := make(chan []byte, 1)
 	notifier := &FuncNotifier{
 		ConnectFunc: func(con Connection, request *http.Request) (string, *http.Response, error) {
-			calledConnect <- struct{}{}
+			calledConnect <- con
 			return connectionId, &http.Response{
 				Status:        "200 OK",
 				StatusCode:    http.StatusOK,
@@ -37,6 +38,13 @@ func TestWebSocketConnector(t *testing.T) {
 				t.Errorf("want %s, got %s", connectionId, id)
 			}
 			calledDisconnect <- struct{}{}
+			return nil
+		},
+		NotifyFunc: func(id string, data []byte) error {
+			if id != connectionId {
+				t.Errorf("want %s, got %s", connectionId, id)
+			}
+			calledNotify <- data
 			return nil
 		},
 	}
@@ -58,10 +66,26 @@ func TestWebSocketConnector(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
+	var serverConn Connection
 	select {
-	case <-calledConnect:
+	case serverConn = <-calledConnect:
 	case <-time.After(5 * time.Second):
 		t.Error("connection time out")
+	}
+
+	// from server to client
+	var message []byte
+	serverConn.Send([]byte("foobar"))
+	websocket.Message.Receive(conn, &message)
+	if string(message) != "foobar" {
+		t.Errorf("want %s, got %s", "foobar", string(message))
+	}
+
+	// from client to server
+	message = []byte("FOOBAR")
+	websocket.Message.Send(conn, message)
+	if msg := <-calledNotify; string(msg) != "FOOBAR" {
+		t.Errorf("want %s, got %s", "FOOBAR", string(msg))
 	}
 
 	// test disconnect
