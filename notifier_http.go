@@ -111,9 +111,9 @@ func (n *HTTPNotifier) send(id string, eventType EventType, data []byte) error {
 		return err
 	}
 
-	req.Header.Set("content-type", n.BodyType)
-	req.Header.Set("x-oortcloud-connection-id", id)
-	req.Header.Set("x-oortcloud-event", eventType.String())
+	req.Header.Set("Content-Type", n.BodyType)
+	req.Header.Set("X-Oortcloud-Connection-Id", id)
+	req.Header.Set("X-Oortcloud-Event", eventType.String())
 	resp, err := n.Client.Do(req)
 	if err != nil {
 		return err
