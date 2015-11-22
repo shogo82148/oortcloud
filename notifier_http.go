@@ -70,8 +70,30 @@ func (n *HTTPNotifier) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func (n *HTTPNotifier) Connect(con Connection, request *http.Request) (string, *http.Response, error) {
 	id := n.conMap.New(con)
-	err := n.send(id, Connect, []byte{})
-	return id, nil, err
+	req, err := http.NewRequest("POST", n.getURL(), nil)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// copy header
+	if request != nil {
+		for _, h := range hopHeaders {
+			request.Header.Del(h)
+		}
+		for k, vv := range request.Header {
+			for _, v := range vv {
+				req.Header.Add(k, v)
+			}
+		}
+	}
+
+	// set X-Oortclound headers
+	req.Header.Set("Content-Type", n.BodyType)
+	req.Header.Set("X-Oortcloud-Connection-Id", id)
+	req.Header.Set("x-Oortcloud-Event", Connect.String())
+
+	resp, err := n.Client.Do(req)
+	return id, resp, err
 }
 
 func (n *HTTPNotifier) Disconnect(id string) error {
