@@ -50,6 +50,7 @@ func NewWebSocketConnector(notifier Notifier, binary bool) *WebSocketConnector {
 func (c *WebSocketConnector) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	id, resp, err := c.notifier.Connect(nil, req)
 	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	if resp != nil {

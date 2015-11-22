@@ -1,6 +1,7 @@
 package oortcloud
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -63,5 +64,23 @@ func TestWebSocketConnector(t *testing.T) {
 	case <-calledDisconnect:
 	case <-time.After(5 * time.Second):
 		t.Error("disconnection time out")
+	}
+}
+
+func TestWebSocketConnector_ConnectionError(t *testing.T) {
+	// prepare the test server
+	notifier := &FuncNotifier{
+		ConnectFunc: func(con Connection, request *http.Request) (string, *http.Response, error) {
+			return "", nil, errors.New("error for test")
+		},
+	}
+	connector := NewWebSocketConnector(notifier, true)
+	ts := httptest.NewServer(connector)
+	defer ts.Close()
+
+	// test connect
+	resp, _ := http.Get(ts.URL)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("want %d, got %v", http.StatusInternalServerError, resp.StatusCode)
 	}
 }
