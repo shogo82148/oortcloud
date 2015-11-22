@@ -54,10 +54,10 @@ func (n *HTTPNotifier) Handle(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (n *HTTPNotifier) Connect(con Connection, data []byte) (string, error) {
+func (n *HTTPNotifier) Connect(con Connection, request *http.Request) (string, *http.Response, error) {
 	id := n.conMap.New(con)
-	err := n.send(id, Connect, data)
-	return id, err
+	err := n.send(id, Connect, []byte{})
+	return id, nil, err
 }
 
 func (n *HTTPNotifier) Disconnect(id string) error {

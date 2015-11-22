@@ -1,8 +1,9 @@
 package oortcloud
 
 import (
-	"bytes"
 	"errors"
+	"io"
+	"net/http"
 
 	"golang.org/x/net/websocket"
 )
@@ -10,6 +11,12 @@ import (
 type WebSocketConnector struct {
 	notifier Notifier
 	codec    websocket.Codec
+}
+
+type WebSocketConnection struct {
+	connector *WebSocketConnector
+	id        string
+	ws        *websocket.Conn
 }
 
 func NewWebSocketConnector(notifier Notifier, binary bool) *WebSocketConnector {
@@ -40,24 +47,48 @@ func NewWebSocketConnector(notifier Notifier, binary bool) *WebSocketConnector {
 	}
 }
 
-// Handle implements the websocket.Handler type
-func (c *WebSocketConnector) Handle(ws *websocket.Conn) {
-	reqestBuf := &bytes.Buffer{}
-	ws.Request().Write(reqestBuf)
-
-	id, err := c.notifier.Connect(nil, reqestBuf.Bytes())
-	if err != nil {
+// Handle implements the http.Handler interface
+func (c *WebSocketConnector) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	id, resp, err := c.notifier.Connect(nil, req)
+	if err != nil || resp == nil {
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	if resp.StatusCode != http.StatusOK {
+		// copy header
+		for _, h := range hopHeaders {
+			resp.Header.Del(h)
+		}
+		for k, vv := range resp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+		resp.Body.Close()
+		return
+	}
+	resp.Body.Close()
 	defer c.notifier.Disconnect(id)
+
+	conn := &WebSocketConnection{
+		connector: c,
+		id:        id,
+	}
+	websocket.Handler(conn.serveWebsocket).ServeHTTP(w, req)
+}
+
+func (c *WebSocketConnection) serveWebsocket(ws *websocket.Conn) {
+	c.ws = ws
 
 	// receive loop
 	var data []byte
 	for {
-		err := c.codec.Receive(ws, &data)
-		if err != nil {
+		if err := c.connector.codec.Receive(ws, &data); err != nil {
 			return
 		}
-		c.notifier.Notify(id, data)
+		c.connector.notifier.Notify(c.id, data)
 	}
 }
