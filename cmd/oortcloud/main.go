@@ -13,8 +13,8 @@ import (
 
 func main() {
 	var configPath string
-	flag.StringVar(&configPath, "c", "oorcloud.yml", "path to configure file")
-	flag.StringVar(&configPath, "config", "oorcloud.yml", "path to configure file")
+	flag.StringVar(&configPath, "c", "oortcloud.yml", "path to configure file")
+	flag.StringVar(&configPath, "config", "oortcloud.yml", "path to configure file")
 	flag.Parse()
 
 	config, err := LoadConfig(configPath)
