@@ -77,13 +77,13 @@ func (n *HTTPNotifier) Connect(con Connection, request *http.Request) (string, *
 
 	// copy header
 	if request != nil {
-		for _, h := range hopHeaders {
-			request.Header.Del(h)
-		}
 		for k, vv := range request.Header {
 			for _, v := range vv {
 				req.Header.Add(k, v)
 			}
+		}
+		for _, h := range hopHeaders {
+			req.Header.Del(h)
 		}
 	}
 
