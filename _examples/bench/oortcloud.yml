@@ -1,0 +1,6 @@
+websocket:
+  port: 5001
+api:
+  port: 5002
+  callback:
+    - http://localhost:5000/callback
